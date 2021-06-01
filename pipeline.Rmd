@@ -1,0 +1,106 @@
+---
+title: "local PCA pipeline (V5)"
+output: html_notebook
+---
+Mimulus Guttatus PCA plots by chromosome
+#setting working directory
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+#set wd in folder containing Tidy Data csv files from all FMS runs
+knitr::opts_knit$set(root.dir ="/Users/laure/Documents/Berkeley/THESIS/local PCA project/")
+```
+
+#upload files (smat = data file, Inds1 = ".indv", SNP_IDs = ".pos")
+```{r}
+Smat_1<-read.table(file.choose(), head=F, row.names=1)     #will take a long time to load b/c its large and wide
+Inds1<-read.table(file.choose())     #use same for every chromosome
+SNP_IDs<-read.table(file.choose())     #unique file for each chromosome
+```
+
+pipeline
+```{r}
+#setting column and row headers
+colnames(Smat_1)<-SNP_IDs[,2]
+row.names(Smat_1)<-Inds1[,1]
+
+#removing CA individuals, also worth doing without this step to see how CA fits in
+Smat_1[-c(38:48, 106:108),]->C5 
+
+#iteratively removing low quality SNPs and individuals (initial)
+t(C5)->t5
+data.frame(t5)->t5     #makes the matrix into a dataframe (for easiness purposes)
+t5[t5==-1]<-NA     #adds in NA where applicable
+a=apply(t5,1,function(x) sum(is.na(x))/length(x))     #finds amount of NA for each SNP
+k=(a<0.25)     #subset list of SNPs that don't fit criteria
+t5_a=t5[k,]     #making new dataframe without k
+b=apply(t5_a,2,function(x) sum(is.na(x))/length(x))     #finds amount of NA for each individual
+kk=(b<0.40)     #subset list of individuals that don't fit criteria
+t5_ab=t5_a[,kk]    #removing kk from dataframe without k
+
+#repeat until satisfied
+a=apply(t5_ab,1,function(x) sum(is.na(x))/length(x))
+k=(a<0.10)
+t5_abc=t5_ab[k,]
+b=apply(t5_abc,2,function(x) sum(is.na(x))/length(x))
+kk=(b<0.20)
+t5_abcd=t5_abc[,kk]
+
+#making PCA figures
+library("lostruct")
+eigen_windows(t5_abcd, k=2, win=200)->x52     #picking the correct windows is very important so that later steps work, may have to revise
+data.frame(x52)->x53
+a=apply(x53,1,function(x) sum(is.na(x))/length(x))     #should be mostly 0s, one last pruning
+k=(a<0.01)
+x53=x53[k,]
+as.matrix(x53)->x53
+windist5h <- pc_dist( x53, npc=2 )
+fit2d5h <- cmdscale( windist5h, eig=TRUE, k=2 )
+plot( fit2d5h$points, xlab="Coordinate 1", ylab="Coordinate 2", col=rainbow(1.2*nrow(windist5h)) )
+write.csv(x53, file='MGuttatus-chr1-x53.txt')
+write.csv(t5_abcd, file='Mguttatus-chr1-t5abcd.txt')
+
+
+##problems with inconsistent filtering between x53 and t5_abcd!!!
+##see locations code for fix
+
+```
+
+locations code with fix
+```{r}
+##making ref file of start/stop location of each window in R
+#loading in files
+t5_abcd<- read.csv(file.choose(), head=F, row.names=1)
+
+#fixing filtering error (simply load x53 instead if done correctly)
+eigen_windows(t5_abcd, k=2, win=200)->x52
+data.frame(x52)->x53
+```
+pipeline (change number to match file!!!!)
+```{r}
+#creating index
+indx<- seq(from = 1, to = nrow(t5_abcd), by = 200)
+#making vector for row names
+rnam <- rownames(t5_abcd)
+#grabbing positional data(row names from t5_abcd)
+loc2<- vector()
+for (i in 1:length(indx)) {
+    indx[i]->a
+    loc2 <- c(loc2, rnam[a])
+} 
+
+#turning vectors into a matrix
+indx <- as.dataframe(indx)
+loc2 <- as.dataframe(loc2)
+lref <- cbind(indx,loc2)
+#removing last row from lref to match lostruct output
+lref <- lref[-890,] #change number to match file
+
+#writing ref file
+write.csv(lref, file='MGuttatus-chr1-locationref.txt')
+
+#adding locations back into x53 file
+x54 <- cbind(lref,x53)
+
+#writing ref file
+write.csv(x54, file='MGuttatus-chr1-x54.txt')
+```
